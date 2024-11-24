@@ -1,3 +1,42 @@
+class BitArray {
+  constructor(length) {
+    this.length = length;
+    this.bits = new Uint32Array((length >>> 5) + 1);
+  }
+
+  get(i) {
+    i |= 0;
+    return !!(this.bits[i >>> 5] & (1 << (i & 31)));
+  }
+
+  set(i, v) {
+    i |= 0;
+    var idx = i >>> 5;
+    var bit = 1 << (i & 31);
+    if (v) {
+      this.bits[idx] |= bit;
+      return true;
+    } else {
+      this.bits[idx] &= ~bit;
+      return false;
+    }
+  }
+
+  toJSON = function () {
+    return JSON.stringify({
+      bits: Array.prototype.slice.call(this.bits),
+      length: this.length,
+    });
+  };
+
+  static fromJSON(str) {
+    const obj = JSON.parse(str);
+    const r = new BitArray(obj.length);
+    r.bits.set(obj.bits);
+    return r;
+  }
+}
+
 // Переменные для управления игрой
 let gridSize = 70; // Размер поля по умолчанию
 let intervalId; // Идентификатор интервала для автоматической генерации следующего поколения
@@ -7,6 +46,57 @@ let gridColor = "#000000"; // Цвет сетки
 let bgColor = "#f5f5f5"; // Цвет фона
 
 let cells = []; // Массив для хранения состояния клеток
+
+function stateToSearch(clear) {
+  const size = document.getElementById("size").value;
+  const params = { size };
+  if (!clear) {
+    const bit = new BitArray(cells.length);
+    for (let i = 0; i < cells.length; i++) {
+      bit.set(i, cells[i]);
+    }
+    params.bits = bit.toJSON();
+  }
+  const search = Object.entries(params)
+    .map(([k, v]) => {
+      return `${k}=${encodeURIComponent(v)}`;
+    })
+    .join("&");
+  window.location.search = `?${search}`;
+}
+
+function searchToState() {
+  const search = window.location.search.split("?");
+  const params = search[search.length - 1];
+  if (params) {
+    const data = params.split("&").reduce((acc, pair) => {
+      const [k, v] = pair.split("=");
+      acc[k] = v;
+      return acc;
+    }, {});
+    const size = Number(data.size);
+    document.getElementById("size").value =
+      !Number.isNaN(size) && Number.isFinite(size) ? size : 70;
+
+    if (data.bits) {
+      const bits = decodeURIComponent(data.bits);
+      try {
+        const bit = BitArray.fromJSON(bits);
+        cells = new Array(bit.length).fill(() => false);
+        for (let i = 0; i < cells.length; i++) {
+          cells[i] = bit.get(i, cells[i]);
+        }
+      } catch (err) {}
+    }
+  }
+}
+
+function prepareGame() {
+  searchToState();
+  initializeGame();
+  searchToState();
+  resize();
+}
 
 // Инициализация игры при загрузке страницы
 function initializeGame() {
@@ -178,9 +268,6 @@ function countNeighbors(x, y) {
   return count;
 }
 
-// Инициализация игры при загрузке страницы
-initializeGame();
-
 // Добавляем обработчик клика по canvas
 document.getElementById("grid-canvas").addEventListener("click", toggleCell);
 
@@ -202,4 +289,4 @@ function resize() {
 
 // Добавляем обработчик изменения размера окна
 window.addEventListener("resize", resize);
-window.onload = resize;
+window.onload = prepareGame;
